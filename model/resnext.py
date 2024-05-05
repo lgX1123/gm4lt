@@ -81,6 +81,9 @@ class ResNet(nn.Module):
             nn.Linear(512 * block.expansion, hidden_dim), 
             nn.BatchNorm1d(hidden_dim), 
             nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, hidden_dim), 
+            nn.BatchNorm1d(hidden_dim), 
+            nn.ReLU(inplace=True),
             nn.Linear(hidden_dim, feature_dim)
         )
 

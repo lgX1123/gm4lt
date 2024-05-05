@@ -66,10 +66,13 @@ class ResNet(nn.Module):
 
         self.fc = nn.Linear(self.out_dim, num_classes)
 
-        hidden_dim = 1024
+        hidden_dim = 2048
         feature_dim = 128
         self.contrast_head = nn.Sequential(
             nn.Linear(self.out_dim, hidden_dim), 
+            nn.BatchNorm1d(hidden_dim), 
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, hidden_dim), 
             nn.BatchNorm1d(hidden_dim), 
             nn.ReLU(inplace=True),
             nn.Linear(hidden_dim, feature_dim)

@@ -16,6 +16,7 @@ from model.resnext import resnet50, resnext50
 from model.resnet_small import resnet32
 from dataset.cifar100 import Cifar100
 from dataset.cifar10 import Cifar10
+from dataset.imagenet import ImageNet_LT
 from utils.util import *
 from Trainer import Trainer
 
@@ -35,21 +36,22 @@ def get_model(args):
 def get_dataset(args):
     transform_train, transform_val = get_transform(args.dataset)
     if args.dataset == 'cifar10':
-        trainset = Cifar10(transform=TwoCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True)
-        testset = Cifar10(imbanlance_rate=args.imbanlance_rate, train=False, transform=transform_val)
+        trainset = Cifar10(transform=ThreeCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True)
+        testset = Cifar10(transform=transform_val, imbanlance_rate=args.imbanlance_rate, train=False)
         print("load cifar10")
         return trainset, testset
 
     if args.dataset == 'cifar100':
-        trainset = Cifar100(transform=TwoCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True)
-        testset = Cifar100(imbanlance_rate=args.imbanlance_rate, train=False, transform=transform_val)
+        trainset = Cifar100(transform=ThreeCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True)
+        testset = Cifar100(transform=transform_val, imbanlance_rate=args.imbanlance_rate, train=False)
         print("load cifar100")
         return trainset, testset
 
-    # if args.dataset == 'ImageNet-LT':
-    #     trainset = dataset_lt_data.LT_Dataset(args.root, args.dir_train_txt,util.TwoCropTransform(transform_train))
-    #     testset = dataset_lt_data.LT_Dataset(args.root, args.dir_test_txt,transform_val)
-    #     return trainset,testset
+    if args.dataset == 'ImageNet-LT':
+        trainset = ImageNet_LT(transform=ThreeCropTransform(transform_train), train=True)
+        testset = ImageNet_LT(transform=transform_val, train=False)
+        print("load ImageNet-LT")
+        return trainset, testset
     
 
 def main():
@@ -115,9 +117,8 @@ def main_worker(gpu, args):
     assert num_classes == args.num_classes
     real_per_class_num = train_dataset.get_real_per_class_num()
 
-    train_sampler = None
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None), num_workers=args.workers, persistent_workers=True, pin_memory=True, sampler=train_sampler)
-    mix_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None), num_workers=args.workers, persistent_workers=True, pin_memory=True, sampler=train_sampler)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, persistent_workers=True, pin_memory=True)
+    mix_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, persistent_workers=True, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, persistent_workers=True, pin_memory=True)
 
     start_time = time.time()
@@ -140,6 +141,7 @@ if __name__ == '__main__':
     parser.add_argument('--wd', '--weight_decay', default=5e-3, type=float, metavar='W',help='weight decay (default: 5e-3、2e-4、1e-4)', dest='weight_decay')
     parser.add_argument('-warm', type=int, default=1, help='warm up training phase')
     parser.add_argument('-features_dim', type=int, default=128, help='dim of contrastive features')
+    parser.add_argument('--loss_strategy', default='drop', choices=('pos_neg', 'neg_only', 'drop'))
     
     parser.add_argument('--seed', default=35180, type=int, help='seed for initializing training. ')
     parser.add_argument('-p', '--print_freq', default=100, type=int, metavar='N', help='print frequency (default: 100)')

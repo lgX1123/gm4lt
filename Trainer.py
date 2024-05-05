@@ -15,7 +15,6 @@ from loss.MixLoss import MixLoss
 import datetime
 import math
 from sklearn.metrics import confusion_matrix
-from sklearn.neighbors import KNeighborsClassifier
 import warnings
 
 
@@ -40,7 +39,7 @@ class Trainer(object):
         self.optimizer = torch.optim.SGD(self.model.parameters(), momentum=0.9, lr=self.lr, weight_decay=args.weight_decay)
         # self.train_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[60, 120, 160], gamma=0.2)
         self.train_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epochs)
-        self.SCL = SCL().cuda(self.device)
+        self.SCL = SCL(self.args.loss_strategy).cuda(self.device)
         self.CE = nn.CrossEntropyLoss().cuda(self.device)
         self.ML = MixLoss().cuda(self.device)
         
@@ -72,9 +71,7 @@ class Trainer(object):
         cont_loss = AverageMeter('ContrastiveLoss', ':.4e')
         losses = AverageMeter('Loss', ':.4e')
 
-        real_features, real_labels = self.get_real_features()
-        knn = KNeighborsClassifier(n_neighbors=self.real_per_class_num[-1]*2)
-        knn.fit(real_features, real_labels)
+        prototypes, prototypes_labels = self.get_prototypes()
 
         # switch to train mode
         self.model.train()
@@ -83,36 +80,29 @@ class Trainer(object):
 
         for i, ((input_1, target_1, is_syn), (input_2, target_2, _)) in enumerate(zip(self.train_loader, self.mix_loader)):
             batch_size = target_1.shape[0]
-            input_1 = torch.cat([input_1[0], input_1[1]], dim=0)
-            input_2 = torch.cat([input_2[0], input_2[1]], dim=0)
+            input_1 = torch.cat([input_1[0], input_1[1], input_1[2]], dim=0)
+            input_2 = input_2[0]
             if self.device is not None:
                 input_1 = input_1.cuda(self.device)
                 target_1 = target_1.cuda(self.device)
                 input_2 = input_2.cuda(self.device)
                 target_2 = target_2.cuda(self.device)
             
-            input_view1, input_view2 = torch.split(input_1, [batch_size, batch_size], dim=0)
-            input_mix_aug1, _ = torch.split(input_2, [batch_size, batch_size], dim=0)
+            input1_view1, input1_view2, input1_view3 = torch.split(input_1, [batch_size, batch_size, batch_size], dim=0)
+            input2_view1 = input_2
             
             one_hot_target_1 = F.one_hot(target_1, num_classes=self.num_classes)
             one_hot_target_2 = F.one_hot(target_2, num_classes=self.num_classes)
-            x_mixup, y_mixup = mixup(input_view1, input_mix_aug1, one_hot_target_1, one_hot_target_2)
-            x_cutmix, y_cutmix = cutmix(input_view1, input_mix_aug1, one_hot_target_1, one_hot_target_2)
+            x_mixup, y_mixup = mixup(input1_view1, input2_view1, one_hot_target_1, one_hot_target_2)
+            x_cutmix, y_cutmix = cutmix(input1_view1, input2_view1, one_hot_target_1, one_hot_target_2)
 
             _, output_mixup = self.model(x_mixup)
             _, output_cutmix = self.model(x_cutmix)
-            z1, _ = self.model(input_view1)
-            z2, _ = self.model(input_view2)
-            z1_ = z1.cpu().detach().numpy()
-            z2_ = z2.cpu().detach().numpy()
-            target_1_ = target_1.cpu().detach().numpy()
 
-            new_label = self.relable(knn, z1_, z2_, is_syn.numpy(), target_1_)
-            new_label = torch.from_numpy(new_label)
-            if self.device is not None:
-                new_label = new_label.cuda(self.device)
-            contloss = self.SCL(torch.stack((z1, z2), dim=1), target_1)
-
+            z2, _ = self.model(input1_view2)
+            z3, _ = self.model(input1_view3)
+            
+            contloss = self.SCL(torch.stack((z2, z3), dim=1), target_1, is_syn, prototypes, prototypes_labels)
             mixloss = self.ML(output_mixup, output_cutmix, y_mixup, y_cutmix)
             loss = mixloss + contloss
             #loss = mixloss
@@ -200,45 +190,46 @@ class Trainer(object):
         return top1.avg
 
     
-    def get_real_features(self):
+    def get_prototypes(self):
         self.model.eval()
 
-        features = None
-        labels = None
+        feat_dim = 128
+        features_v2 = torch.empty((0, feat_dim))
+        features_v3 = torch.empty((0, feat_dim))
+        targets = torch.empty(0, dtype=torch.long)
+        prototypes_v2 = torch.zeros(self.num_classes, feat_dim)
+        prototypes_v3 = torch.zeros(self.num_classes, feat_dim)
 
         with torch.no_grad():
             for i, (input, target, is_syn) in enumerate(self.train_loader):
-                input = torch.cat([input[0], input[1]], dim=0)
-                target = target.repeat(2)
-                is_syn = is_syn.repeat(2)
+                input_2, input_3 = input[1], input[2]
                 if self.device is not None:
-                    input = input.cuda(self.device)
+                    input_2 = input_2.cuda(self.device)
+                    input_3 = input_3.cuda(self.device)
                 
                 # compute output
-                z, output = self.model(input)
+                z2, output = self.model(input_2)
+                z3, output = self.model(input_3)
+                z2 = z2.cpu()
+                z3 = z3.cpu()
 
-                is_syn = is_syn.numpy()
-                z = z.cpu().numpy()
-                target = target.numpy()
-                z = z[is_syn == 0]
+                z2 = z2[is_syn == 0]
+                z3 = z3[is_syn == 0]
                 target = target[is_syn == 0]
 
-                if z.shape[0] > 0:
-                    if features is None:
-                        features = z
-                        labels = target
-                    else:
-                        features = np.concatenate([features, z], axis=0)
-                        labels = np.concatenate([labels, target], axis=0)
+                if target.shape[0] > 0:
+                    features_v2 = torch.cat([features_v2, z2], axis=0)
+                    features_v3 = torch.cat([features_v3, z3], axis=0)
+                    targets = torch.cat([targets, target], axis=0)
 
-            return features, labels
+            for cls in range(self.num_classes):
+                mask = targets == cls
+                features_v2_cls = features_v2[mask]
+                features_v3_cls = features_v3[mask]
+                prototypes_v2[cls] = features_v2_cls.mean(dim=0)
+                prototypes_v3[cls] = features_v3_cls.mean(dim=0)
 
-    
-    def relable(self, knn, z1, z2, is_syn, label):
-        is_syn = is_syn.astype(bool)
-        output1 = knn.predict(z1)
-        output2 = knn.predict(z2)
-        index = ((output1 == label) & (output2 == label) | (~is_syn))
-        label[~index] = -1
-        return label
-        
+            if self.device is not None:
+                return torch.stack((prototypes_v2, prototypes_v3), dim=1).cuda(self.device), torch.arange(self.num_classes, dtype=torch.long).cuda(self.device)
+            else:
+                return torch.stack((prototypes_v2, prototypes_v3), dim=1), torch.arange(self.num_classes, dtype=torch.long)
