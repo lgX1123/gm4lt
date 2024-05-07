@@ -7,6 +7,7 @@ import numpy as np
 from PIL import ImageFilter
 import random
 from utils.autoaug import CIFAR10Policy, Cutout
+from utils.randaugment import rand_augment_transform
 
 
 class ThreeCropTransform:
@@ -70,7 +71,8 @@ def accuracy(output, target, topk=(1,)):
         return res
 
 
-def get_transform(dataset):
+def get_transform(args):
+    dataset = args.dataset
     if dataset == "cifar10":
         mean = (0.49139968, 0.48215827, 0.44653124)
         std = (0.24703233, 0.24348505, 0.26158768)
@@ -149,7 +151,20 @@ def get_transform(dataset):
     
     if dataset == 'ImageNet-LT':
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        rgb_mean = (0.485, 0.456, 0.406)
+        ra_params = dict(translate_const=int(224 * 0.45), img_mean=tuple([min(255, round(255 * x)) for x in rgb_mean]),)
         transform_train_1 = transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=(0.08, 1.)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomApply([
+                transforms.ColorJitter(0.4, 0.4, 0.4, 0.0)
+            ], p=1.0),
+            rand_augment_transform('rand-n{}-m{}-mstd0.5'.format(args.randaug_n, args.randaug_m), ra_params),
+            transforms.ToTensor(),
+            normalize,
+    ])
+
+        transform_train_2 = transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.RandomApply([
@@ -167,7 +182,7 @@ def get_transform(dataset):
             normalize
         ])
 
-        return [transform_train_1, transform_train_1, transform_train_1], transform_val
+        return [transform_train_1, transform_train_2, transform_train_2], transform_val
         
 
 

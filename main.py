@@ -34,7 +34,7 @@ def get_model(args):
 
 
 def get_dataset(args):
-    transform_train, transform_val = get_transform(args.dataset)
+    transform_train, transform_val = get_transform(args)
     if args.dataset == 'cifar10':
         trainset = Cifar10(transform=ThreeCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True)
         testset = Cifar10(transform=transform_val, imbanlance_rate=args.imbanlance_rate, train=False)
