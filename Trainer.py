@@ -30,7 +30,6 @@ class Trainer(object):
         self.num_classes = args.num_classes
         self.real_per_class_num = np.array(real_per_class_num)
         self.log = log
-        self.feat_dim = args.features_dim
         
         self.train_loader = train_loader
         self.mix_loader = mix_loader
@@ -46,7 +45,6 @@ class Trainer(object):
         
     def train(self):
         best_acc1 = 0
-        self.memory_bank = [torch.empty((0, self.feat_dim)), torch.empty((0, self.feat_dim)), torch.empty(0, dtype=torch.long)]
         for epoch in range(self.start_epoch, self.epochs):
             print('current lr {:.5e}'.format(self.optimizer.param_groups[0]['lr']))
             self.train_per_epoch(epoch)
@@ -72,11 +70,8 @@ class Trainer(object):
         mix_loss = AverageMeter('MixLoss', ':.4e')
         cont_loss = AverageMeter('ContrastiveLoss', ':.4e')
         losses = AverageMeter('Loss', ':.4e')
-        
-        if self.memory_bank[0].shape[0] == 0:
-            prototypes, prototypes_labels = self.get_first_prototypes()
-        else:
-            prototypes, prototypes_labels = self.get_prototypes()
+
+        prototypes, prototypes_labels = self.get_prototypes()
 
         # switch to train mode
         self.model.train()
@@ -105,7 +100,6 @@ class Trainer(object):
 
             z2, _ = self.model(input1_view2)
             z3, _ = self.model(input1_view3)
-            self.save_features(z2, z3, target_1, is_syn)
             
             contloss = self.SCL(torch.stack((z2, z3), dim=1), target_1, is_syn, prototypes, prototypes_labels)
             mixloss = self.ML(output_mixup, output_cutmix, y_mixup, y_cutmix)
@@ -192,50 +186,17 @@ class Trainer(object):
                   )
             
         return top1.avg
+
     
-    @torch.no_grad()
-    def save_features(self, x2, x3, target, is_syn):
-        z2 = x2.cpu()
-        z3 = x3.cpu()
-        target = target.cpu()
-
-        z2 = z2[is_syn == 0]
-        z3 = z3[is_syn == 0]
-        target = target[is_syn == 0]
-
-        if target.shape[0] > 0:
-            self.memory_bank[0] = torch.cat([self.memory_bank[0], z2], axis=0)
-            self.memory_bank[1] = torch.cat([self.memory_bank[1], z3], axis=0)
-            self.memory_bank[2] = torch.cat([self.memory_bank[2], target], axis=0)
-
-    @torch.no_grad()
     def get_prototypes(self):
-        features_v2, features_v3, targets = self.memory_bank
-
-        prototypes_v2 = torch.zeros(self.num_classes, self.feat_dim)
-        prototypes_v3 = torch.zeros(self.num_classes, self.feat_dim)
-
-        for cls in range(self.num_classes):
-            mask = targets == cls
-            features_v2_cls = features_v2[mask]
-            features_v3_cls = features_v3[mask]
-            prototypes_v2[cls] = features_v2_cls.mean(dim=0)
-            prototypes_v3[cls] = features_v3_cls.mean(dim=0)
-
-        self.memory_bank = [torch.empty((0, self.feat_dim)), torch.empty((0, self.feat_dim)), torch.empty(0, dtype=torch.long)]
-
-        return torch.stack((prototypes_v2, prototypes_v3), dim=1).cuda(self.device), torch.arange(self.num_classes, dtype=torch.long).cuda(self.device)
-
-
-    
-    def get_first_prototypes(self):
         self.model.eval()
 
-        features_v2 = torch.empty((0, self.feat_dim))
-        features_v3 = torch.empty((0, self.feat_dim))
+        feat_dim = 128
+        features_v2 = torch.empty((0, feat_dim))
+        features_v3 = torch.empty((0, feat_dim))
         targets = torch.empty(0, dtype=torch.long)
-        prototypes_v2 = torch.zeros(self.num_classes, self.feat_dim)
-        prototypes_v3 = torch.zeros(self.num_classes, self.feat_dim)
+        prototypes_v2 = torch.zeros(self.num_classes, feat_dim)
+        prototypes_v3 = torch.zeros(self.num_classes, feat_dim)
 
         with torch.no_grad():
             for i, (input, target, is_syn) in enumerate(self.train_loader):
