@@ -147,7 +147,7 @@ def get_transform(dataset):
         ])
         return [transform_train_1, transform_train_2, transform_train_3], transform_val
     
-    if dataset == 'imagenet':
+    if dataset == 'ImageNet-LT':
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         transform_train_1 = transforms.Compose([
             transforms.RandomResizedCrop(224),

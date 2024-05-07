@@ -28,7 +28,7 @@ def get_model(args):
         net = resnet32(num_classes=args.num_classes)
     elif args.arch == 'resnet50':
         net = resnet50(num_classes=args.num_classes)
-    elif args.arch == 'resnext':
+    elif args.arch == 'resnext50':
         net = resnext50(num_classes=args.num_classes)
     return net
 
@@ -130,8 +130,8 @@ def main_worker(gpu, args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ResNets for CIFAR100')
-    parser.add_argument('--dataset', type=str, default='cifar10', help="cifar10, cifar100")
-    parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet32', choices=('resnet18', 'resnet32', 'resnet34', 'resnet50', 'resnet101', 'resnet152'))
+    parser.add_argument('--dataset', type=str, default='cifar10', help="cifar10, cifar100, ImageNet-LT")
+    parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet32', choices=('resnet32', 'resnet50', 'resnext50'))
     parser.add_argument('--imbanlance_rate', default=0.01, type=float, help='imbalance factor')
     parser.add_argument('--num_classes', default=10, type=int, help='number of classes ')
     parser.add_argument('--lr', '--learning-rate', default=0.01, type=float, metavar='LR', help='initial learning rate', dest='lr')
