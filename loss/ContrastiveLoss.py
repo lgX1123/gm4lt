@@ -9,8 +9,8 @@ class SCL(nn.Module):
         super(SCL, self).__init__()
         self.strategy = strategy
         self.temperature = temperature
-        self.knn_1 = KNeighborsClassifier(n_neighbors=1)
-        self.knn_2 = KNeighborsClassifier(n_neighbors=1)
+        self.knn_1 = KNeighborsClassifier(n_neighbors=1, metric='cosine')
+        self.knn_2 = KNeighborsClassifier(n_neighbors=1, metric='cosine')
 
     @torch.no_grad()
     def relabel(self, real_features, real_labels, syn_features, syn_labels):
