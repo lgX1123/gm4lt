@@ -19,7 +19,7 @@ import warnings
 
 
 class Trainer(object):
-    def __init__(self, args, model=None, train_loader=None, mix_loader=None, val_loader=None, real_per_class_num=[], log=None):
+    def __init__(self, args, model=None, train_loader=None, mix_loader=None, real_loader=None, val_loader=None, real_per_class_num=[], log=None):
         self.args = args
         self.device = args.gpu
         self.print_freq = args.print_freq
@@ -33,15 +33,16 @@ class Trainer(object):
         
         self.train_loader = train_loader
         self.mix_loader = mix_loader
+        self.real_loader = real_loader
         self.val_loader = val_loader
         self.model = model
 
         self.optimizer = torch.optim.SGD(self.model.parameters(), momentum=0.9, lr=self.lr, weight_decay=args.weight_decay)
         # self.train_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[60, 120, 160], gamma=0.2)
         self.train_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epochs)
-        self.SCL = SCL(self.args.loss_strategy).cuda(self.device)
-        self.CE = nn.CrossEntropyLoss().cuda(self.device)
-        self.ML = MixLoss().cuda(self.device)
+        self.SCL = SCL(self.args.loss_strategy).cuda()
+        self.CE = nn.CrossEntropyLoss().cuda()
+        self.ML = MixLoss().cuda()
         
     def train(self):
         best_acc1 = 0
@@ -82,10 +83,10 @@ class Trainer(object):
             batch_size = target_1.shape[0]
             input_1 = torch.cat([input_1[0], input_1[1], input_1[2]], dim=0)
             input_2 = input_2[0]
-            input_1 = input_1.cuda(self.device)
-            target_1 = target_1.cuda(self.device)
-            input_2 = input_2.cuda(self.device)
-            target_2 = target_2.cuda(self.device)
+            input_1 = input_1.cuda()
+            target_1 = target_1.cuda()
+            input_2 = input_2.cuda()
+            target_2 = target_2.cuda()
             
             input1_view1, input1_view2, input1_view3 = torch.split(input_1, [batch_size, batch_size, batch_size], dim=0)
             input2_view1 = input_2
@@ -143,8 +144,8 @@ class Trainer(object):
         end = time.time()
         with torch.no_grad():
             for i, (input, target, is_syn) in enumerate(self.val_loader):
-                input = input.cuda(self.device)
-                target = target.cuda(self.device)
+                input = input.cuda()
+                target = target.cuda()
 
                 # compute output
                 z, output = self.model(input)
@@ -192,32 +193,26 @@ class Trainer(object):
         self.model.eval()
 
         feat_dim = 128
-        features_v2 = torch.empty((0, feat_dim))
-        features_v3 = torch.empty((0, feat_dim))
-        targets = torch.empty(0, dtype=torch.long)
-        prototypes_v2 = torch.zeros(self.num_classes, feat_dim)
-        prototypes_v3 = torch.zeros(self.num_classes, feat_dim)
+        features_v2 = torch.empty((0, feat_dim)).cuda()
+        features_v3 = torch.empty((0, feat_dim)).cuda()
+        targets = torch.empty(0, dtype=torch.long).cuda()
+        prototypes_v2 = torch.zeros(self.num_classes, feat_dim).cuda()
+        prototypes_v3 = torch.zeros(self.num_classes, feat_dim).cuda()
 
         with torch.no_grad():
-            for i, (input, target, is_syn) in enumerate(self.train_loader):
+            for i, (input, target, is_syn) in enumerate(self.real_loader):
                 input_2, input_3 = input[1], input[2]
-                input_2 = input_2.cuda(self.device)
-                input_3 = input_3.cuda(self.device)
+                input_2 = input_2.cuda()
+                input_3 = input_3.cuda()
+                target = target.cuda()
                 
                 # compute output
                 z2, output = self.model(input_2)
                 z3, output = self.model(input_3)
-                z2 = z2.cpu()
-                z3 = z3.cpu()
 
-                z2 = z2[is_syn == 0]
-                z3 = z3[is_syn == 0]
-                target = target[is_syn == 0]
-
-                if target.shape[0] > 0:
-                    features_v2 = torch.cat([features_v2, z2], axis=0)
-                    features_v3 = torch.cat([features_v3, z3], axis=0)
-                    targets = torch.cat([targets, target], axis=0)
+                features_v2 = torch.cat([features_v2, z2], axis=0)
+                features_v3 = torch.cat([features_v3, z3], axis=0)
+                targets = torch.cat([targets, target], axis=0)
 
             for cls in range(self.num_classes):
                 mask = targets == cls
@@ -226,4 +221,4 @@ class Trainer(object):
                 prototypes_v2[cls] = features_v2_cls.mean(dim=0)
                 prototypes_v3[cls] = features_v3_cls.mean(dim=0)
 
-            return torch.stack((prototypes_v2, prototypes_v3), dim=1).cuda(self.device), torch.arange(self.num_classes, dtype=torch.long).cuda(self.device)
+            return torch.stack((prototypes_v2, prototypes_v3), dim=1), torch.arange(self.num_classes, dtype=torch.long).cuda()

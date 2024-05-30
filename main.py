@@ -44,8 +44,9 @@ def get_dataset(args):
     if args.dataset == 'cifar100':
         trainset = Cifar100(transform=ThreeCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True)
         testset = Cifar100(transform=transform_val, imbanlance_rate=args.imbanlance_rate, train=False)
+        real_trainset = Cifar100(transform=ThreeCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True, real_only=True)
         print("load cifar100")
-        return trainset, testset
+        return trainset, testset, real_trainset
 
     if args.dataset == 'ImageNet-LT':
         trainset = ImageNet_LT(transform=ThreeCropTransform(transform_train), train=True)
@@ -112,36 +113,37 @@ def main_worker(gpu, args):
     logger.addHandler(fh)
 
     # Data loading code
-    train_dataset, val_dataset = get_dataset(args)
+    train_dataset, val_dataset, real_dataset = get_dataset(args)
     num_classes = len(np.unique(train_dataset.targets))
     assert num_classes == args.num_classes
     real_per_class_num = train_dataset.get_real_per_class_num()
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, persistent_workers=True, pin_memory=True)
     mix_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, persistent_workers=True, pin_memory=True)
+    real_loader = torch.utils.data.DataLoader(real_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, persistent_workers=True, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, persistent_workers=True, pin_memory=True)
 
     start_time = time.time()
     print("Training started!")
-    trainer = Trainer(args, model=model, train_loader=train_loader, mix_loader=mix_loader, val_loader=val_loader, real_per_class_num=real_per_class_num, log=logging)
+    trainer = Trainer(args, model=model, train_loader=train_loader, mix_loader=mix_loader, real_loader=real_loader, val_loader=val_loader, real_per_class_num=real_per_class_num, log=logging)
     trainer.train()
     end_time = time.time()
     print("It took {} to execute the program".format(hms_string(end_time - start_time)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ResNets for CIFAR100')
-    parser.add_argument('--dataset', type=str, default='ImageNet-LT', help="cifar10, cifar100, ImageNet-LT")
-    parser.add_argument('-a', '--arch', metavar='ARCH', default='resnext50', choices=('resnet32', 'resnet50', 'resnext50'))
+    parser.add_argument('--dataset', type=str, default='cifar100', help="cifar10, cifar100, ImageNet-LT")
+    parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet32', choices=('resnet32', 'resnet50', 'resnext50'))
     parser.add_argument('--imbanlance_rate', default=0.01, type=float, help='imbalance factor')
-    parser.add_argument('--num_classes', default=1000, type=int, help='number of classes ')
-    parser.add_argument('--lr', '--learning-rate', default=0.1, type=float, metavar='LR', help='initial learning rate', dest='lr')
+    parser.add_argument('--num_classes', default=100, type=int, help='number of classes ')
+    parser.add_argument('--lr', '--learning-rate', default=0.01, type=float, metavar='LR', help='initial learning rate', dest='lr')
     parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-b', '--batch_size', default=128, type=int, metavar='N', help='mini-batch size')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
-    parser.add_argument('--wd', '--weight_decay', default=2e-4, type=float, metavar='W',help='weight decay (default: 5e-3、2e-4、1e-4)', dest='weight_decay')
+    parser.add_argument('--wd', '--weight_decay', default=5e-3, type=float, metavar='W',help='weight decay (default: 5e-3、2e-4、1e-4)', dest='weight_decay')
     parser.add_argument('-warm', type=int, default=1, help='warm up training phase')
     parser.add_argument('-features_dim', type=int, default=128, help='dim of contrastive features')
-    parser.add_argument('--loss_strategy', default='drop', choices=('pos_neg', 'neg_only', 'drop'))
+    parser.add_argument('--loss_strategy', default='pos_neg', choices=('pos_neg', 'neg_only', 'drop'))
     parser.add_argument('--randaug_m', default=10, type=int, help='randaug-m')
     parser.add_argument('--randaug_n', default=2, type=int, help='randaug-n')
     

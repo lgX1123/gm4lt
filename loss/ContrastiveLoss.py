@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
 
 
 class SCL(nn.Module):
@@ -9,30 +7,30 @@ class SCL(nn.Module):
         super(SCL, self).__init__()
         self.strategy = strategy
         self.temperature = temperature
-        self.knn_1 = KNeighborsClassifier(n_neighbors=1, metric='cosine')
-        self.knn_2 = KNeighborsClassifier(n_neighbors=1, metric='cosine')
 
     @torch.no_grad()
     def relabel(self, real_features, real_labels, syn_features, syn_labels):
-        z_real = real_features.detach().cpu().numpy()
-        y_real = real_labels.detach().cpu().numpy()
-        self.knn_1.fit(z_real[:, 0], y_real)
-        self.knn_2.fit(z_real[:, 1], y_real)
-
-        z_syn = syn_features.detach().cpu().numpy()
-        y_syn = syn_labels.detach().cpu().numpy()
-        output1 = self.knn_1.predict(z_syn[:, 0])
-        output2 = self.knn_2.predict(z_syn[:, 1])
+        z_real = real_features / real_features.norm(dim=-1, keepdim=True)
+        z_syn = syn_features / syn_features.norm(dim=-1, keepdim=True)
         
-        index = ~((output1 == y_syn) & (output2 == y_syn))
+        # cosine similarity per synthetic image to real images
+        logits_per_syn_image_1 = z_syn[:, 0] @ z_real[:, 0].t()
+        logits_per_syn_image_2 = z_syn[:, 1] @ z_real[:, 1].t()
+        
+        y_new_1 = real_labels[logits_per_syn_image_1.argmax(dim=-1)]
+        y_new_2 = real_labels[logits_per_syn_image_2.argmax(dim=-1)]
+        
+        index = ~((y_new_1 == syn_labels) & (y_new_2 == syn_labels))
+        index = index.cuda()
 
         if self.strategy == "pos_neg":
-            noise_labels = -1 * np.arange(1, np.sum(index) + 1)
-            y_syn[index] = noise_labels
+            noise_labels = -1 * torch.arange(1, index.sum() + 1)
+            noise_labels = noise_labels.cuda()
+            syn_labels[index] = noise_labels
         else:
-            y_syn[index] = -1
+            syn_labels[index] = -1
         
-        return torch.from_numpy(y_syn).cuda()
+        return syn_labels
 
     def forward(self, features, labels, is_syn, prototypes, prototypes_labels):
         real_features = features[is_syn == 0]
