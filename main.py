@@ -38,8 +38,9 @@ def get_dataset(args):
     if args.dataset == 'cifar10':
         trainset = Cifar10(transform=ThreeCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True)
         testset = Cifar10(transform=transform_val, imbanlance_rate=args.imbanlance_rate, train=False)
+        real_trainset = Cifar10(transform=ThreeCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True, real_only=True)
         print("load cifar10")
-        return trainset, testset
+        return trainset, testset, real_trainset
 
     if args.dataset == 'cifar100':
         trainset = Cifar100(transform=ThreeCropTransform(transform_train), imbanlance_rate=args.imbanlance_rate, train=True)
@@ -51,8 +52,9 @@ def get_dataset(args):
     if args.dataset == 'ImageNet-LT':
         trainset = ImageNet_LT(transform=ThreeCropTransform(transform_train), train=True)
         testset = ImageNet_LT(transform=transform_val, train=False)
+        real_trainset = ImageNet_LT(transform=ThreeCropTransform(transform_train), train=True, real_only=True)
         print("load ImageNet-LT")
-        return trainset, testset
+        return trainset, testset, real_trainset
     
 
 def main():

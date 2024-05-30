@@ -15,7 +15,8 @@ class ImageNet_LT(Dataset):
                  syn_path='/mnt/ssd_1/gxli/datasets/imagenet/test_imgs',
                  txt_path='./data/imagenet/',
                  train=True,
-                 transform=None):
+                 transform=None,
+                 real_only=False):
         
         self.transform = transform
         self.train = train
@@ -24,7 +25,10 @@ class ImageNet_LT(Dataset):
         self.txt_path = txt_path
 
         if train:
-            self.data = self.produce_train_data()
+            if real_only:
+                self.data = self.produce_real_train_data()
+            else:
+                self.data = self.produce_train_data()
         else:
             self.data = self.produce_test_data()
 
@@ -104,4 +108,20 @@ class ImageNet_LT(Dataset):
 
         return dataset
         
+    def produce_real_train_data(self):
+        img_path = []
+        labels = []
+        data_is_syn = []
+        with open(self.txt_path + 'ImageNet_LT_train.txt', 'r') as f:
+            for line in f:
+                img_path.append(os.path.join(self.real_path, line.split()[0]))
+                labels.append(int(line.split()[1]))
+                data_is_syn.append(0)
+        
+        dataset = {
+            "x": img_path,
+            "y": labels,
+            "is_syn": data_is_syn
+        }
 
+        return dataset
