@@ -12,7 +12,8 @@ import torch.nn.functional as F
 import datetime
 import math
 
-from model.resnext import resnet50, resnext50
+from model.resnext import resnext50
+from model.resnet_big import resnet50
 from model.resnet_small import resnet32
 from dataset.cifar100 import Cifar100
 from dataset.cifar10 import Cifar10
